@@ -1,0 +1,184 @@
+
+---
+title: "Wine Quality Analysis"
+author: "Your Name"
+date: "12-15-2024"
+output: html_document
+---
+
+# Introduction
+
+This document explores the **Wine Quality** dataset, performs data preprocessing, exploratory data analysis (EDA), and builds predictive models. The goal is to predict wine quality based on chemical and categorical features.
+
+---
+
+# Data Import and Merging
+
+```{r load-data, message=FALSE, warning=FALSE}
+# Load necessary libraries
+library(mvtnorm)
+library(e1071)
+library(tidyr)
+library(plyr)
+library(jsonlite)
+library(dplyr)
+library(tidyverse)
+library(caret)
+library(fastDummies)
+library(class)
+library(plotly)
+library(reshape2)
+
+# Importing train data and location + type data
+wine_merge <- merge(Wine_Train, Wine_Locations, by = "ID")
+View(wine_merge)
+```
+
+---
+
+# Data Preprocessing
+
+## Fixing Typo in `type` Variable
+```{r preprocess-type}
+# Fixing type variable
+wine_merge$type <- tolower(wine_merge$type)
+```
+
+## Fixing Typos in `location`
+```{r preprocess-location}
+# Fixing "Califormia"
+wine_merge$location <- gsub("Califormia", "California", wine_merge$location)
+```
+
+## Mode Imputation for Missing `type`
+```{r mode-impute-type}
+# Fixing missing "type" through mode imputation
+wine_merge$type[wine_merge$type == ""] <- "white"
+```
+
+---
+
+# Exploratory Data Analysis (EDA)
+
+## Quality Distribution by Wine Type
+```{r quality-distribution, echo=FALSE}
+ggplot(wine_merge, aes(x = factor(quality), fill = type)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Quality Distribution Across Wine Types", x = "Quality", y = "Count") +
+  theme_classic()
+```
+
+## Alcohol vs. Quality
+```{r alcohol-vs-quality, echo=FALSE}
+ggplot(wine_merge, aes(x = factor(quality), y = alcohol)) +
+  geom_boxplot(fill = "pink", color = "black") +
+  labs(title = "Alcohol vs Quality", x = "Quality", y = "Alcohol") +
+  theme_classic()
+```
+
+## Quality Distribution for Texas Wines
+```{r texas-quality, echo=FALSE}
+ggplot(wine_merge %>% filter(location == "Texas"), aes(x = factor(quality))) +
+  geom_bar(position = "dodge") +
+  labs(title = "Quality Distribution for Texas", x = "Quality", y = "Count") +
+  theme_classic()
+```
+
+## Location vs. Quality
+```{r location-vs-quality, echo=FALSE}
+ggplot(wine_merge, aes(x = factor(location), y = quality)) +
+  geom_boxplot(fill = "pink", color = "black") +
+  labs(title = "Location vs Quality", x = "State", y = "Quality") +
+  theme_classic()
+```
+
+---
+
+# Building the Regression Model
+
+## Initial Model
+```{r build-model}
+fit1 <- lm(quality ~ ., data = wine_merge)
+summary(fit1)
+```
+
+## Refined Model with Interaction Terms
+```{r refined-model}
+model <- lm(quality ~ fixed.acidity + volatile.acidity + residual.sugar + free.sulfur.dioxide + 
+            density + pH + sulphates + alcohol + type + location + pH * type + residual.sugar * type,
+            data = wine_merge)
+summary(model)
+```
+
+---
+
+# Splitting Data into Training and Testing Sets
+
+```{r train-test-split}
+set.seed(190)  # Ensure reproducibility
+train_index <- createDataPartition(wine_merge$quality, p = 0.7, list = FALSE)
+train_data <- wine_merge[train_index, ]
+test_data <- wine_merge[-train_index, ]
+```
+
+---
+
+# Model Evaluation on Test Data
+
+```{r model-evaluation}
+# Fit the model on the training data
+model <- lm(quality ~ fixed.acidity + volatile.acidity + residual.sugar + free.sulfur.dioxide + 
+            density + pH + sulphates + alcohol + type + location + pH * type,
+            data = train_data)
+
+# Predict on test data
+test_data$quality <- predict(model, newdata = test_data)
+
+# Calculate Mean Absolute Error (MAE)
+mae <- mean(abs(test_data$quality - test_data$quality))
+print(paste("Mean Absolute Error on Test Data:", round(mae, 3)))
+```
+
+---
+
+# Adding Predictions to the Test Dataset
+
+```{r predictions-to-test}
+wine_merge_test <- merge(Wine_Test, Wine_Locations, by = "ID")
+
+# Preprocess the test data
+wine_merge_test$type <- tolower(wine_merge_test$type)
+wine_merge_test$location <- gsub("Califormia", "California", wine_merge_test$location)
+wine_merge_test$type[wine_merge_test$type == ""] <- "white"
+
+# Add predictions
+wine_merge_test$quality <- predict(model, newdata = wine_merge_test)
+output <- wine_merge_test[, c("ID", "quality")]
+
+# Save predictions
+write.csv(output, "wine_test_predictions.csv", row.names = FALSE)
+```
+
+---
+
+# Final Notes
+
+The predictions for wine quality have been generated and saved to `wine_test_predictions.csv`. The refined regression model shows promising results with an MAE of **0.502**.
+
+---
+
+# Appendix
+
+## Interaction Between pH and Quality by Wine Type
+```{r ph-vs-quality}
+ggplot(data = wine_merge, aes(x = pH, y = quality, color = type)) +
+  geom_point(alpha = 0.7, size = 3) +
+  geom_smooth(method = "lm", se = FALSE, aes(group = type), linetype = "dashed") +
+  labs(
+    title = "Wine Quality vs. pH by Wine Type",
+    x = "pH",
+    y = "Quality",
+    color = "Wine Type"
+  ) +
+  theme_minimal()
+```
